@@ -37,8 +37,17 @@ for bench in data['benchmarks']:
     # Переводим байты/сек в ГБ/сек (10^9)
     gb_per_sec = bench['bytes_per_second'] / 1e9
     
+    if 'SIMD' in method_raw:
+        method = 'SIMD (AVX-512)'
+    elif 'ThreadPoolFull' in method_raw:
+        method = 'ThreadPool (Full Load)'
+    elif 'ThreadPool' in method_raw:
+        method = 'ThreadPool'
+    else:
+        method = 'Default (C++)'
+
     records.append({
-        'Method': 'SIMD (AVX-512)' if 'SIMD' in method_raw else 'Default (C++)',
+        'Method': method,
         'Image Size': img_size,
         'Kernel Size': kernel_size,
         'Speed (GB/s)': gb_per_sec

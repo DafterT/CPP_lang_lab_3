@@ -46,6 +46,28 @@ public:
     std::vector<unsigned char> process_SIMD(const unsigned char* img_in, int w, int h);
 
     /**
+     * @brief Выполняет свертку RGB изображения в несколько потоков (без SIMD).
+     * Картинка передается по указателю, результат возвращается вектором (RAII).
+     * 
+     * @param img_in Указатель на исходные данные.
+     * @param w Ширина изображения.
+     * @param h Высота изображения.
+     * @return std::vector<unsigned char> Буфер с обработанным изображением.
+     */
+    std::vector<unsigned char> process_thread_pool(const unsigned char* img_in, int w, int h);
+
+    /**
+     * @brief Выполняет свертку RGB изображения, максимально загружая все потоки.
+     * Картинка передается по указателю, результат возвращается вектором (RAII).
+     * 
+     * @param img_in Указатель на исходные данные.
+     * @param w Ширина изображения.
+     * @param h Высота изображения.
+     * @return std::vector<unsigned char> Буфер с обработанным изображением.
+     */
+    std::vector<unsigned char> process_thread_pool_full(const unsigned char* img_in, int w, int h);
+
+    /**
      * @brief Сохраняет изображение на диск (в формате JPG).
      * 
      * @param filename Путь для сохранения.

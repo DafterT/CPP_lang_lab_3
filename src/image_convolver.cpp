@@ -1,6 +1,9 @@
 #include "image_convolver.h"
+#include "thread_pool.h"
 #include <iostream>
 #include <algorithm>
+#include <atomic>
+#include <future>
 
 #ifndef STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
@@ -177,6 +180,229 @@ std::vector<unsigned char> ImageConvolver::process_SIMD(const unsigned char* img
                 img_out[idx + 2] = img_in[idx + 2];
                 img_out[idx + 3] = img_in[idx + 3];
             }
+        }
+    }
+
+    return img_out;
+}
+
+std::vector<unsigned char> ImageConvolver::process_thread_pool(const unsigned char* img_in, int w, int h) {
+    if (!img_in) return {};
+
+    std::vector<unsigned char> img_out(w * h * 4);
+    
+    int kHalfW = m_kW / 2;
+    int kHalfH = m_kH / 2;
+
+    int yBegin = kHalfH;
+    int yEnd = h - kHalfH;
+    int xBegin = kHalfW;
+    int xEnd = w - kHalfW;
+
+    ThreadPool pool;
+    size_t threads = pool.get_thread_count();
+    auto calc_task_count = [threads](int totalRows) {
+        size_t base = threads == 0 ? 1 : threads;
+        return std::min<size_t>(base, static_cast<size_t>(totalRows));
+    };
+
+    if (yBegin < yEnd && xBegin < xEnd) {
+        int totalRows = yEnd - yBegin;
+        size_t taskCount = calc_task_count(totalRows);
+
+        int rowsPerTask = totalRows / static_cast<int>(taskCount);
+        int remainder = totalRows % static_cast<int>(taskCount);
+
+        std::vector<std::future<void>> futures;
+        futures.reserve(taskCount);
+
+        int yStart = yBegin;
+        for (size_t t = 0; t < taskCount; ++t) {
+            int extra = (static_cast<int>(t) < remainder) ? 1 : 0;
+            int yStop = yStart + rowsPerTask + extra;
+            if (yStart >= yStop) {
+                break;
+            }
+
+            futures.emplace_back(pool.dispatch_task([=, &img_out, this]() {
+                for (int y = yStart; y < yStop; ++y) {
+                    for (int x = xBegin; x < xEnd; ++x) {
+                        float sumR = 0.f, sumG = 0.f, sumB = 0.f;
+
+                        for (int ky = -kHalfH; ky <= kHalfH; ++ky) {
+                            for (int kx = -kHalfW; kx <= kHalfW; ++kx) {
+                                int sx = x + kx;
+                                int sy = y + ky;
+                                int srcIdx = (sy * w + sx) * 4;
+
+                                int kkx = kx + kHalfW;
+                                int kky = ky + kHalfH;
+                                float wgt = m_kernel[kky * m_kW + kkx];
+
+                                sumR += wgt * img_in[srcIdx + 0];
+                                sumG += wgt * img_in[srcIdx + 1];
+                                sumB += wgt * img_in[srcIdx + 2];
+                            }
+                        }
+
+                        int dstIdx = (y * w + x) * 4;
+                        img_out[dstIdx + 0] = (unsigned char)std::clamp(sumR, 0.f, 255.f);
+                        img_out[dstIdx + 1] = (unsigned char)std::clamp(sumG, 0.f, 255.f);
+                        img_out[dstIdx + 2] = (unsigned char)std::clamp(sumB, 0.f, 255.f);
+                        img_out[dstIdx + 3] = img_in[dstIdx + 3];
+                    }
+                }
+            }));
+            yStart = yStop;
+        }
+
+        for (auto& future : futures) {
+            future.get();
+        }
+    }
+
+    // Обработка границ (копирование) в несколько потоков
+    if (h > 0 && w > 0) {
+        int totalRows = h;
+        size_t taskCount = calc_task_count(totalRows);
+
+        int rowsPerTask = totalRows / static_cast<int>(taskCount);
+        int remainder = totalRows % static_cast<int>(taskCount);
+
+        std::vector<std::future<void>> futures;
+        futures.reserve(taskCount);
+
+        int yStart = 0;
+        for (size_t t = 0; t < taskCount; ++t) {
+            int extra = (static_cast<int>(t) < remainder) ? 1 : 0;
+            int yStop = yStart + rowsPerTask + extra;
+            if (yStart >= yStop) {
+                break;
+            }
+
+            futures.emplace_back(pool.dispatch_task([=, &img_out]() {
+                for (int y = yStart; y < yStop; ++y) {
+                    for (int x = 0; x < w; ++x) {
+                        if (y < kHalfH || y >= h - kHalfH || x < kHalfW || x >= w - kHalfW) {
+                            int idx = (y * w + x) * 4;
+                            img_out[idx + 0] = img_in[idx + 0];
+                            img_out[idx + 1] = img_in[idx + 1];
+                            img_out[idx + 2] = img_in[idx + 2];
+                            img_out[idx + 3] = img_in[idx + 3];
+                        }
+                    }
+                }
+            }));
+            yStart = yStop;
+        }
+
+        for (auto& future : futures) {
+            future.get();
+        }
+    }
+
+    return img_out;
+}
+
+std::vector<unsigned char> ImageConvolver::process_thread_pool_full(const unsigned char* img_in, int w, int h) {
+    if (!img_in) return {};
+
+    std::vector<unsigned char> img_out(w * h * 4);
+    
+    int kHalfW = m_kW / 2;
+    int kHalfH = m_kH / 2;
+
+    int yBegin = kHalfH;
+    int yEnd = h - kHalfH;
+    int xBegin = kHalfW;
+    int xEnd = w - kHalfW;
+
+    ThreadPool pool;
+    size_t threads = pool.get_thread_count();
+
+    // Основная область свертки с динамическим распределением строк
+    if (yBegin < yEnd && xBegin < xEnd) {
+        std::atomic<int> nextRow{yBegin};
+        const int blockRows = 1; // Мелкие блоки строк, чтобы держать потоки занятыми
+
+        std::vector<std::future<void>> futures;
+        futures.reserve(threads);
+
+        for (size_t t = 0; t < threads; ++t) {
+            futures.emplace_back(pool.dispatch_task([&, this]() {
+                while (true) {
+                    int yStart = nextRow.fetch_add(blockRows);
+                    if (yStart >= yEnd) {
+                        break;
+                    }
+                    int yStop = std::min(yStart + blockRows, yEnd);
+
+                    for (int y = yStart; y < yStop; ++y) {
+                        for (int x = xBegin; x < xEnd; ++x) {
+                            float sumR = 0.f, sumG = 0.f, sumB = 0.f;
+
+                            for (int ky = -kHalfH; ky <= kHalfH; ++ky) {
+                                for (int kx = -kHalfW; kx <= kHalfW; ++kx) {
+                                    int srcIdx = ((y + ky) * w + (x + kx)) * 4;
+                                    float wgt = m_kernel[(ky + kHalfH) * m_kW + (kx + kHalfW)];
+
+                                    sumR += wgt * img_in[srcIdx + 0];
+                                    sumG += wgt * img_in[srcIdx + 1];
+                                    sumB += wgt * img_in[srcIdx + 2];
+                                }
+                            }
+
+                            int dstIdx = (y * w + x) * 4;
+                            img_out[dstIdx + 0] = static_cast<unsigned char>(std::clamp(sumR, 0.f, 255.f));
+                            img_out[dstIdx + 1] = static_cast<unsigned char>(std::clamp(sumG, 0.f, 255.f));
+                            img_out[dstIdx + 2] = static_cast<unsigned char>(std::clamp(sumB, 0.f, 255.f));
+                            img_out[dstIdx + 3] = img_in[dstIdx + 3];
+                        }
+                    }
+                }
+            }));
+        }
+
+        for (auto& future : futures) {
+            future.get();
+        }
+    }
+
+    // Обработка границ (копирование) с динамическим распределением строк
+    if (h > 0 && w > 0) {
+        std::atomic<int> nextRow{0};
+        const int blockRows = 1; // Мелкие блоки строк, чтобы держать потоки занятыми
+
+        std::vector<std::future<void>> futures;
+        futures.reserve(threads);
+
+        for (size_t t = 0; t < threads; ++t) {
+            futures.emplace_back(pool.dispatch_task([&, this]() {
+                while (true) {
+                    int yStart = nextRow.fetch_add(blockRows);
+                    if (yStart >= h) {
+                        break;
+                    }
+                    int yStop = std::min(yStart + blockRows, h);
+
+                    for (int y = yStart; y < yStop; ++y) {
+                        for (int x = 0; x < w; ++x) {
+                            if (y < kHalfH || y >= h - kHalfH ||
+                                x < kHalfW || x >= w - kHalfW) {
+                                int idx = (y * w + x) * 4;
+                                img_out[idx + 0] = img_in[idx + 0];
+                                img_out[idx + 1] = img_in[idx + 1];
+                                img_out[idx + 2] = img_in[idx + 2];
+                                img_out[idx + 3] = img_in[idx + 3];
+                            }
+                        }
+                    }
+                }
+            }));
+        }
+
+        for (auto& future : futures) {
+            future.get();
         }
     }
 

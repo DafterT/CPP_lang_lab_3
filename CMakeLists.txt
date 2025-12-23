@@ -4,6 +4,8 @@ project(GaussianBlurProject LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+find_package(Threads REQUIRED)
+
 # === Принудительно Release конфигурация для этой сборки ===
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
@@ -70,7 +72,7 @@ target_include_directories(run_image_benchmark PRIVATE
     ${stb_SOURCE_DIR}
 )
 
-target_link_libraries(run_image_benchmark PRIVATE benchmark::benchmark)
+target_link_libraries(run_image_benchmark PRIVATE benchmark::benchmark Threads::Threads)
 
 # ==========================================
 # 5. Вывод команд по сборке и запуску

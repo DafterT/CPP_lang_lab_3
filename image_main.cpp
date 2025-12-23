@@ -101,6 +101,24 @@ BENCHMARK_DEFINE_F(BlurFixture, BM_ProcessSIMD)(benchmark::State& state) {
     state.SetBytesProcessed(int64_t(state.iterations()) * int64_t(w) * int64_t(h) * 4);
 }
 
+// 3. Бенчмарк для ThreadPool (многопоточная версия)
+BENCHMARK_DEFINE_F(BlurFixture, BM_ProcessThreadPool)(benchmark::State& state) {
+    for (auto _ : state) {
+        std::vector<unsigned char> res = convolver->process_thread_pool(input_img.data(), w, h);
+        benchmark::DoNotOptimize(res.data());
+    }
+    state.SetBytesProcessed(int64_t(state.iterations()) * int64_t(w) * int64_t(h) * 4);
+}
+
+// 4. Бенчмарк для ThreadPool (максимальная загрузка потоков)
+BENCHMARK_DEFINE_F(BlurFixture, BM_ProcessThreadPoolFull)(benchmark::State& state) {
+    for (auto _ : state) {
+        std::vector<unsigned char> res = convolver->process_thread_pool_full(input_img.data(), w, h);
+        benchmark::DoNotOptimize(res.data());
+    }
+    state.SetBytesProcessed(int64_t(state.iterations()) * int64_t(w) * int64_t(h) * 4);
+}
+
 // Регистрируем бенчмарки с аргументами
 // ArgPair(ImageSize, KernelSize)
 
@@ -118,10 +136,26 @@ static void CustomArguments(benchmark::internal::Benchmark* b) {
 
 BENCHMARK_REGISTER_F(BlurFixture, BM_ProcessDefault)
     ->Apply(CustomArguments)
-    ->Unit(benchmark::kMicrosecond); // Вывод времени
+    ->UseRealTime()
+    ->Unit(benchmark::kMicrosecond) // Вывод времени
+    ->Iterations(25);
 
 BENCHMARK_REGISTER_F(BlurFixture, BM_ProcessSIMD)
     ->Apply(CustomArguments)
-    ->Unit(benchmark::kMicrosecond);
+    ->UseRealTime()
+    ->Unit(benchmark::kMicrosecond)
+    ->Iterations(25);
+
+BENCHMARK_REGISTER_F(BlurFixture, BM_ProcessThreadPool)
+    ->Apply(CustomArguments)
+    ->UseRealTime()
+    ->Unit(benchmark::kMicrosecond)
+    ->Iterations(25);
+
+BENCHMARK_REGISTER_F(BlurFixture, BM_ProcessThreadPoolFull)
+    ->Apply(CustomArguments)
+    ->UseRealTime()
+    ->Unit(benchmark::kMicrosecond)
+    ->Iterations(25);
 
 BENCHMARK_MAIN();

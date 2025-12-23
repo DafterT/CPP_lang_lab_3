@@ -9,6 +9,8 @@
 #include <condition_variable>
 #include <atomic>
 #include <type_traits>
+#include <utility>
+#include <stdexcept>
 
 /**
  * @brief Пул потоков для асинхронного выполнения задач.
@@ -72,6 +74,8 @@ private:
     struct Task {
         std::function<void()> func;  ///< Функция для выполнения
 
+        Task() = default;
+
         /**
          * @brief Конструктор задачи.
          * @param f Функция для выполнения.
@@ -100,3 +104,36 @@ private:
     std::atomic<bool> m_stop{false};           ///< Флаг остановки пула потоков
 };
 
+template<typename Fn, typename T>
+std::future<T> ThreadPool::dispatch_task(Fn&& f) {
+    auto promise = std::make_shared<std::promise<T>>();
+    std::future<T> future = promise->get_future();
+
+    auto task_func = [func = std::forward<Fn>(f), promise]() mutable {
+        try {
+            if constexpr (std::is_void_v<T>) {
+                std::invoke(std::move(func));
+                promise->set_value();
+            } else {
+                promise->set_value(std::invoke(std::move(func)));
+            }
+        } catch (...) {
+            try {
+                promise->set_exception(std::current_exception());
+            } catch (...) {
+            }
+        }
+    };
+
+    {
+        std::unique_lock<std::mutex> lock(m_queue_mutex);
+        if (m_stop) {
+            throw std::runtime_error("Cannot dispatch task: ThreadPool is stopped");
+        }
+        m_tasks.emplace(std::move(task_func));
+    }
+
+    m_condition.notify_one();
+
+    return future;
+}

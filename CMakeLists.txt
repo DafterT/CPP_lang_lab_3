@@ -51,6 +51,9 @@ file(GLOB SOURCES "src/*.cpp")
 # ==========================================
 if(MSVC)
     set(MY_COMPILE_FLAGS /O2 /arch:AVX512)
+    # Отключаем runtime checks для Release сборки
+    string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+    string(REPLACE "/RTC1" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
 else()
     set(MY_COMPILE_FLAGS -O3 -march=native)
 endif()
@@ -70,26 +73,10 @@ target_include_directories(run_image_benchmark PRIVATE
 target_link_libraries(run_image_benchmark PRIVATE benchmark::benchmark)
 
 # ==========================================
-# 5. Таргет 2: Бенчмарк KNN
-# ==========================================
-add_executable(run_knn_benchmark knn_main.cpp ${SOURCES})
-
-target_compile_options(run_knn_benchmark PRIVATE ${MY_COMPILE_FLAGS})
-
-target_include_directories(run_knn_benchmark PRIVATE 
-    inc
-    ${stb_SOURCE_DIR} 
-)
-
-target_link_libraries(run_knn_benchmark PRIVATE benchmark::benchmark)
-
-# ==========================================
-# 6. Вывод команд по сборке и запуску
+# 5. Вывод команд по сборке и запуску
 # ==========================================
 message(STATUS "Configure done. Build with:")
 message(STATUS "  cmake -S . -B build -DCMAKE_BUILD_TYPE=Release")
 message(STATUS "  cmake --build build -j")
 message(STATUS "Run Image benchmark:")
 message(STATUS "  ./build/run_image_benchmark")
-message(STATUS "Run KNN benchmark:")
-message(STATUS "  ./build/run_knn_benchmark")

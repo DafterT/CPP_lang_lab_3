@@ -186,7 +186,7 @@ std::vector<unsigned char> ImageConvolver::process_SIMD(const unsigned char* img
     return img_out;
 }
 
-std::vector<unsigned char> ImageConvolver::process_thread_pool(const unsigned char* img_in, int w, int h) {
+std::vector<unsigned char> ImageConvolver::process_thread_pool(const unsigned char* img_in, int w, int h, size_t num_threads) {
     if (!img_in) return {};
 
     std::vector<unsigned char> img_out(w * h * 4);
@@ -199,7 +199,7 @@ std::vector<unsigned char> ImageConvolver::process_thread_pool(const unsigned ch
     int xBegin = kHalfW;
     int xEnd = w - kHalfW;
 
-    ThreadPool pool;
+    ThreadPool pool(num_threads);
     size_t threads = pool.get_thread_count();
     auto calc_task_count = [threads](int totalRows) {
         size_t base = threads == 0 ? 1 : threads;
@@ -304,7 +304,7 @@ std::vector<unsigned char> ImageConvolver::process_thread_pool(const unsigned ch
     return img_out;
 }
 
-std::vector<unsigned char> ImageConvolver::process_thread_pool_full(const unsigned char* img_in, int w, int h) {
+std::vector<unsigned char> ImageConvolver::process_thread_pool_full(const unsigned char* img_in, int w, int h, size_t num_threads) {
     if (!img_in) return {};
 
     std::vector<unsigned char> img_out(w * h * 4);
@@ -317,7 +317,7 @@ std::vector<unsigned char> ImageConvolver::process_thread_pool_full(const unsign
     int xBegin = kHalfW;
     int xEnd = w - kHalfW;
 
-    ThreadPool pool;
+    ThreadPool pool(num_threads);
     size_t threads = pool.get_thread_count();
 
     // Основная область свертки с динамическим распределением строк

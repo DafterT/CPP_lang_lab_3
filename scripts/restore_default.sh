@@ -100,6 +100,10 @@ fi
 if (( NUM_CPUS > 63 )); then NUM_CPUS=63; fi
 MASK_DEC=$(( (1<<NUM_CPUS) - 1 ))
 MASK_HEX=$(printf "%x\n" "$MASK_DEC")
+CPU_LIST_ALL=""
+for c in "${CPUS[@]}"; do
+  CPU_LIST_ALL="${CPU_LIST_ALL:+$CPU_LIST_ALL,}${c}"
+done
 
 echo "[restore] Resetting IRQ affinities to mask 0x${MASK_HEX} (all CPUs)"
 shopt -s nullglob
@@ -111,8 +115,7 @@ done
 for f in /proc/irq/*/smp_affinity_list; do
   if [[ -w "$f" ]]; then
     # Альтернативная запись через список ядер
-    seq_list=$(seq -s, 0 $((NUM_CPUS-1)))
-    echo "$seq_list" > "$f" 2>/dev/null || true
+    [[ -n "$CPU_LIST_ALL" ]] && echo "$CPU_LIST_ALL" > "$f" 2>/dev/null || true
   fi
 done
 

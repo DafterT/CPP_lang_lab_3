@@ -9,7 +9,31 @@ mkdir -p "$STATE_DIR"
 echo "[prepare] Saving current settings to: $STATE_FILE"
 
 CPU_PATH="/sys/devices/system/cpu"
+SMT_CTRL="/sys/devices/system/cpu/smt/control"
+NMI_FILE="/proc/sys/kernel/nmi_watchdog"
 mapfile -t CPUS < <(ls -d ${CPU_PATH}/cpu[0-9]* 2>/dev/null | sed 's#^.*/cpu##' | sort -n)
+
+# Expand CPU list like "0,2-4,7" into one CPU per line.
+expand_cpu_list() {
+  local list="$1"
+  local part start end
+  local -a parts
+  IFS=',' read -r -a parts <<< "$list"
+  for part in "${parts[@]}"; do
+    [[ -z "$part" ]] && continue
+    if [[ "$part" =~ ^[0-9]+-[0-9]+$ ]]; then
+      start="${part%-*}"
+      end="${part#*-}"
+      if (( start <= end )); then
+        for ((i=start; i<=end; i++)); do echo "$i"; done
+      else
+        for ((i=start; i>=end; i--)); do echo "$i"; done
+      fi
+    elif [[ "$part" =~ ^[0-9]+$ ]]; then
+      echo "$part"
+    fi
+  done
+}
 
 # Save per-CPU governor/min/max/EPP
 for c in "${CPUS[@]}"; do
@@ -35,6 +59,10 @@ fi
 # Save ASLR
 ASLR_FILE="/proc/sys/kernel/randomize_va_space"
 echo "ASLR=$(cat "$ASLR_FILE")" >> "$STATE_FILE"
+
+# Save SMT + NMI watchdog
+[[ -r "$SMT_CTRL" ]] && echo "SMT_CONTROL=$(cat "$SMT_CTRL")" >> "$STATE_FILE"
+[[ -r "$NMI_FILE" ]] && echo "NMI_WATCHDOG=$(cat "$NMI_FILE")" >> "$STATE_FILE"
 
 # --- Save THP (Transparent Huge Pages) mode & defrag ---
 THP_ENABLED="/sys/kernel/mm/transparent_hugepage/enabled"
@@ -171,26 +199,47 @@ if [[ -w "$THP_DEFRAG" ]]; then
   echo never | sudo tee "$THP_DEFRAG" >/dev/null || true
 fi
 
-# 9) Migrate IRQs away from the benchmark CPU
-# Используй переменную окружения BENCH_CPU (по умолчанию 2)
-BENCH_CPU="${BENCH_CPU:-2}"
-echo "[prepare] Moving IRQs off CPU ${BENCH_CPU}"
+# 9) Migrate IRQs away from benchmark CPUs
+# Используй переменную окружения BENCH_CPUS (например, "2,4-6"), либо BENCH_CPU (по умолчанию 2)
+BENCH_CPUS="${BENCH_CPUS:-${BENCH_CPU:-2}}"
+BENCH_CPUS="${BENCH_CPUS//[[:space:]]/}"
+echo "[prepare] Moving IRQs off CPU(s): ${BENCH_CPUS}"
 
 # Список всех IRQ
 mapfile -t IRQS < <(ls -d /proc/irq/[0-9]* 2>/dev/null | sed 's#.*/##' | sort -n)
 
-# Построить affinity_list без целевого CPU: "0,1,3,4,..."
+declare -A CPU_AVAILABLE=()
+for c in "${CPUS[@]}"; do CPU_AVAILABLE["$c"]=1; done
+declare -A BENCH_SET=()
+while IFS= read -r cpu; do
+  [[ -z "$cpu" ]] && continue
+  [[ -n "${CPU_AVAILABLE[$cpu]:-}" ]] || continue
+  BENCH_SET["$cpu"]=1
+done < <(expand_cpu_list "$BENCH_CPUS")
+
+if [[ "${#BENCH_SET[@]}" -eq 0 ]]; then
+  FALLBACK_CPU="${CPUS[0]:-0}"
+  echo "[prepare][warn] BENCH_CPUS invalid; falling back to CPU ${FALLBACK_CPU}"
+  BENCH_SET["$FALLBACK_CPU"]=1
+  BENCH_CPUS="$FALLBACK_CPU"
+fi
+
+# Построить affinity_list без целевых CPU: "0,1,3,4,..."
 CPU_LIST_NO_TARGET=""
 for cpu in "${CPUS[@]}"; do
-  [[ "$cpu" == "$BENCH_CPU" ]] && continue
+  [[ -n "${BENCH_SET[$cpu]:-}" ]] && continue
   CPU_LIST_NO_TARGET="${CPU_LIST_NO_TARGET:+$CPU_LIST_NO_TARGET,}${cpu}"
 done
 
-for irq in "${IRQS[@]}"; do
-  AFFL="/proc/irq/${irq}/smp_affinity_list"
-  [[ -w "$AFFL" ]] || continue
-  echo "$CPU_LIST_NO_TARGET" | sudo tee "$AFFL" >/dev/null || true
-done
+if [[ -z "$CPU_LIST_NO_TARGET" ]]; then
+  echo "[prepare][warn] No CPUs left for IRQs; skipping IRQ affinity updates"
+else
+  for irq in "${IRQS[@]}"; do
+    AFFL="/proc/irq/${irq}/smp_affinity_list"
+    [[ -w "$AFFL" ]] || continue
+    echo "$CPU_LIST_NO_TARGET" | sudo tee "$AFFL" >/dev/null || true
+  done
+fi
 
 
 echo
@@ -207,4 +256,4 @@ echo "[prepare] ASLR                   = $(cat /proc/sys/kernel/randomize_va_spa
 
 echo
 echo "[prepare] Tip: pin your workload, e.g."
-echo "  taskset -c 2 ./build/bench_insert --benchmark_filter='BM_Insert_Average/32768' --benchmark_min_time=2s --benchmark_repetitions=5 --benchmark_report_aggregates_only=true"
+echo "  BENCH_CPUS=${BENCH_CPUS} taskset -c \"${BENCH_CPUS}\" ./build/bench_insert --benchmark_filter='BM_Insert_Average/32768' --benchmark_min_time=2s --benchmark_repetitions=5 --benchmark_report_aggregates_only=true"

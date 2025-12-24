@@ -1,11 +1,18 @@
 #include <benchmark/benchmark.h>
-#include <vector>
-#include <random>
+#include <algorithm>
 #include <cmath>
-#include <iostream>
 #include <cstring>
+#include <iostream>
+#include <random>
+#include <thread>
+#include <vector>
 
 #include "image_convolver.h" // Твой заголовочный файл
+
+namespace {
+constexpr int64_t kMinBenchmarkIterations = 10;
+constexpr double kMinBenchmarkSeconds = 3.0;
+}  // namespace
 
 // Вспомогательная функция для генерации ядра Гаусса
 // Нам не важна математическая точность значений для теста скорости, главное размер
@@ -79,53 +86,99 @@ public:
 
 // 1. Бенчмарк для DEFAULT (обычный C++)
 BENCHMARK_DEFINE_F(BlurFixture, BM_ProcessDefault)(benchmark::State& state) {
-    for (auto _ : state) {
-        // Код, который замеряем
-        std::vector<unsigned char> res = convolver->process_default(input_img.data(), w, h);
-        
-        // clobber memory, чтобы компилятор не выкинул код
-        benchmark::DoNotOptimize(res.data());
+    const int64_t batch = kMinBenchmarkIterations;
+    while (state.KeepRunningBatch(batch)) {
+        for (int64_t i = 0; i < batch; ++i) {
+            // Код, который замеряем
+            std::vector<unsigned char> res = convolver->process_default(input_img.data(), w, h);
+
+            // clobber memory, чтобы компилятор не выкинул код
+            benchmark::DoNotOptimize(res.data());
+        }
     }
 
     // Устанавливаем метрику "Обработано байт в секунду"
     // 4 байта на пиксель * ширина * высота * кол-во итераций
-    state.SetBytesProcessed(int64_t(state.iterations()) * int64_t(w) * int64_t(h) * 4);
+    const int64_t total_iters = static_cast<int64_t>(state.iterations());
+    state.SetBytesProcessed(total_iters * int64_t(w) * int64_t(h) * 4);
 }
 
 // 2. Бенчмарк для SIMD (AVX-512)
 BENCHMARK_DEFINE_F(BlurFixture, BM_ProcessSIMD)(benchmark::State& state) {
-    for (auto _ : state) {
-        std::vector<unsigned char> res = convolver->process_SIMD(input_img.data(), w, h);
-        benchmark::DoNotOptimize(res.data());
+    const int64_t batch = kMinBenchmarkIterations;
+    while (state.KeepRunningBatch(batch)) {
+        for (int64_t i = 0; i < batch; ++i) {
+            std::vector<unsigned char> res = convolver->process_SIMD(input_img.data(), w, h);
+            benchmark::DoNotOptimize(res.data());
+        }
     }
-    state.SetBytesProcessed(int64_t(state.iterations()) * int64_t(w) * int64_t(h) * 4);
+    const int64_t total_iters = static_cast<int64_t>(state.iterations());
+    state.SetBytesProcessed(total_iters * int64_t(w) * int64_t(h) * 4);
 }
 
 // 3. Бенчмарк для ThreadPool (многопоточная версия)
 BENCHMARK_DEFINE_F(BlurFixture, BM_ProcessThreadPool)(benchmark::State& state) {
-    for (auto _ : state) {
-        std::vector<unsigned char> res = convolver->process_thread_pool(input_img.data(), w, h);
-        benchmark::DoNotOptimize(res.data());
+    size_t threads = static_cast<size_t>(state.range(2));
+    const int64_t batch = kMinBenchmarkIterations;
+    while (state.KeepRunningBatch(batch)) {
+        for (int64_t i = 0; i < batch; ++i) {
+            std::vector<unsigned char> res = convolver->process_thread_pool(input_img.data(), w, h, threads);
+            benchmark::DoNotOptimize(res.data());
+        }
     }
-    state.SetBytesProcessed(int64_t(state.iterations()) * int64_t(w) * int64_t(h) * 4);
+    const int64_t total_iters = static_cast<int64_t>(state.iterations());
+    state.SetBytesProcessed(total_iters * int64_t(w) * int64_t(h) * 4);
 }
 
 // 4. Бенчмарк для ThreadPool (максимальная загрузка потоков)
 BENCHMARK_DEFINE_F(BlurFixture, BM_ProcessThreadPoolFull)(benchmark::State& state) {
-    for (auto _ : state) {
-        std::vector<unsigned char> res = convolver->process_thread_pool_full(input_img.data(), w, h);
-        benchmark::DoNotOptimize(res.data());
+    size_t threads = static_cast<size_t>(state.range(2));
+    const int64_t batch = kMinBenchmarkIterations;
+    while (state.KeepRunningBatch(batch)) {
+        for (int64_t i = 0; i < batch; ++i) {
+            std::vector<unsigned char> res = convolver->process_thread_pool_full(input_img.data(), w, h, threads);
+            benchmark::DoNotOptimize(res.data());
+        }
     }
-    state.SetBytesProcessed(int64_t(state.iterations()) * int64_t(w) * int64_t(h) * 4);
+    const int64_t total_iters = static_cast<int64_t>(state.iterations());
+    state.SetBytesProcessed(total_iters * int64_t(w) * int64_t(h) * 4);
 }
 
 // Регистрируем бенчмарки с аргументами
 // ArgPair(ImageSize, KernelSize)
 
 // Генерируем список аргументов
+static std::vector<int> BuildThreadCounts() {
+    unsigned int hw = std::thread::hardware_concurrency();
+    if (hw == 0) {
+        hw = 1;
+    }
+
+    std::vector<int> candidates = {
+        1,
+        static_cast<int>(hw / 2),
+        static_cast<int>(hw),
+        static_cast<int>(hw * 2)
+    };
+
+    std::vector<int> unique_counts;
+    unique_counts.reserve(candidates.size());
+
+    for (int count : candidates) {
+        if (count < 1) {
+            count = 1;
+        }
+        if (std::find(unique_counts.begin(), unique_counts.end(), count) == unique_counts.end()) {
+            unique_counts.push_back(count);
+        }
+    }
+
+    return unique_counts;
+}
+
 static void CustomArguments(benchmark::internal::Benchmark* b) {
     std::vector<int> imgSizes = {32, 64, 128, 256, 512, 1024, 2048, 4096};
-    std::vector<int> kernelSizes = {3, 5, 7, 10};
+    std::vector<int> kernelSizes = {3, 5, 7, 9};
 
     for (int is : imgSizes) {
         for (int ks : kernelSizes) {
@@ -134,28 +187,42 @@ static void CustomArguments(benchmark::internal::Benchmark* b) {
     }
 }
 
+static void CustomArgumentsThreadPool(benchmark::internal::Benchmark* b) {
+    std::vector<int> imgSizes = {32, 64, 128, 256, 512, 1024, 2048, 4096};
+    std::vector<int> kernelSizes = {3, 5, 7, 9};
+    std::vector<int> threadCounts = BuildThreadCounts();
+
+    for (int is : imgSizes) {
+        for (int ks : kernelSizes) {
+            for (int threads : threadCounts) {
+                b->Args({is, ks, threads});
+            }
+        }
+    }
+}
+
 BENCHMARK_REGISTER_F(BlurFixture, BM_ProcessDefault)
     ->Apply(CustomArguments)
     ->UseRealTime()
     ->Unit(benchmark::kMicrosecond) // Вывод времени
-    ->Iterations(25);
+    ->MinTime(kMinBenchmarkSeconds);
 
 BENCHMARK_REGISTER_F(BlurFixture, BM_ProcessSIMD)
     ->Apply(CustomArguments)
     ->UseRealTime()
     ->Unit(benchmark::kMicrosecond)
-    ->Iterations(25);
+    ->MinTime(kMinBenchmarkSeconds);
 
 BENCHMARK_REGISTER_F(BlurFixture, BM_ProcessThreadPool)
-    ->Apply(CustomArguments)
+    ->Apply(CustomArgumentsThreadPool)
     ->UseRealTime()
     ->Unit(benchmark::kMicrosecond)
-    ->Iterations(25);
+    ->MinTime(kMinBenchmarkSeconds);
 
 BENCHMARK_REGISTER_F(BlurFixture, BM_ProcessThreadPoolFull)
-    ->Apply(CustomArguments)
+    ->Apply(CustomArgumentsThreadPool)
     ->UseRealTime()
     ->Unit(benchmark::kMicrosecond)
-    ->Iterations(25);
+    ->MinTime(kMinBenchmarkSeconds);
 
 BENCHMARK_MAIN();

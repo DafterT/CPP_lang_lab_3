@@ -1,7 +1,8 @@
 #pragma once
 
-#include <vector>
+#include <cstddef>
 #include <string>
+#include <vector>
 
 class ImageConvolver {
 public:
@@ -52,9 +53,10 @@ public:
      * @param img_in Указатель на исходные данные.
      * @param w Ширина изображения.
      * @param h Высота изображения.
+     * @param num_threads Количество потоков (0 = аппаратная конфигурация).
      * @return std::vector<unsigned char> Буфер с обработанным изображением.
      */
-    std::vector<unsigned char> process_thread_pool(const unsigned char* img_in, int w, int h);
+    std::vector<unsigned char> process_thread_pool(const unsigned char* img_in, int w, int h, size_t num_threads = 0);
 
     /**
      * @brief Выполняет свертку RGB изображения, максимально загружая все потоки.
@@ -63,9 +65,10 @@ public:
      * @param img_in Указатель на исходные данные.
      * @param w Ширина изображения.
      * @param h Высота изображения.
+     * @param num_threads Количество потоков (0 = аппаратная конфигурация).
      * @return std::vector<unsigned char> Буфер с обработанным изображением.
      */
-    std::vector<unsigned char> process_thread_pool_full(const unsigned char* img_in, int w, int h);
+    std::vector<unsigned char> process_thread_pool_full(const unsigned char* img_in, int w, int h, size_t num_threads = 0);
 
     /**
      * @brief Сохраняет изображение на диск (в формате JPG).

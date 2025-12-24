@@ -29,7 +29,7 @@ active_from_thp_line() {
 }
 
 # ---------- парсинг state.env ----------
-declare -A KV CPU_GOV CPU_MIN CPU_MAX CPU_EPP IRQ_AFF
+declare -A KV CPU_GOV CPU_MIN CPU_MAX CPU_EPP IRQ_AFF CSTATE_DIS
 IRQ_LIST=""
 
 while IFS= read -r line || [[ -n "$line" ]]; do
@@ -46,6 +46,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     CPU[0-9]*_EPP) idx=${key#CPU}; idx=${idx%_EPP}; CPU_EPP["$idx"]="$val" ;;
     IRQ_LIST) IRQ_LIST="$val" ;;
     IRQ[0-9]*_AFFINITY_LIST) irq="${key#IRQ}"; irq="${irq%_AFFINITY_LIST}"; IRQ_AFF["$irq"]="$val" ;;
+    CPU[0-9]*_CSTATE[0-9]*_DIS) CSTATE_DIS["$key"]="$val" ;;
   esac
 done < "$STATE_FILE"
 
@@ -138,6 +139,19 @@ if [[ "$CSTATE_COUNT" =~ ^[0-9]+$ && "$CSTATE_COUNT" -gt 0 ]]; then
     [[ -n "$path" && -n "$val" && -w "$path" ]] || continue
     echo "  $path <- $val"
     echo "$val" > "$path" || true
+  done
+elif [[ "${#CSTATE_DIS[@]}" -gt 0 ]]; then
+  echo "[restore] Restoring cpuidle disables (legacy keys)…"
+  for key in "${!CSTATE_DIS[@]}"; do
+    if [[ "$key" =~ ^CPU([0-9]+)_CSTATE([0-9]+)_DIS$ ]]; then
+      cpu="${BASH_REMATCH[1]}"
+      sid="${BASH_REMATCH[2]}"
+      path="${CPU_PATH}/cpu${cpu}/cpuidle/state${sid}/disable"
+      val="${CSTATE_DIS[$key]}"
+      [[ -n "$val" && -w "$path" ]] || continue
+      echo "  $path <- $val"
+      echo "$val" > "$path" || true
+    fi
   done
 fi
 

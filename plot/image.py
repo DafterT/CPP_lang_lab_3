@@ -83,14 +83,14 @@ if USE_TIME:
     METRIC_LABEL = f'Время ({TIME_UNIT})'
     MAIN_TITLE_TEMPLATE = 'Время на итерацию (Kernel {k}x{k})'
     TP_TITLE_TEMPLATE = 'ThreadPool: время на итерацию (Kernel {k}x{k})'
-    TPF_TITLE_TEMPLATE = 'ThreadPool Full: время на итерацию (Kernel {k}x{k})'
+    TPF_TITLE_TEMPLATE = 'ThreadPool Rows: время на итерацию (Kernel {k}x{k})'
     VALUE_FORMAT = '%.3f'
 else:
     METRIC_FIELD = 'Speed (GB/s)'
     METRIC_LABEL = 'Скорость (GB/s)'
     MAIN_TITLE_TEMPLATE = 'Производительность (Kernel {k}x{k})'
     TP_TITLE_TEMPLATE = 'ThreadPool (Kernel {k}x{k})'
-    TPF_TITLE_TEMPLATE = 'ThreadPool Full (Kernel {k}x{k})'
+    TPF_TITLE_TEMPLATE = 'ThreadPool Rows (Kernel {k}x{k})'
     VALUE_FORMAT = '%.3f'
 
 # 1. Парсинг данных
@@ -148,8 +148,8 @@ for bench in data['benchmarks']:
         method_group = 'SIMD'
         method = 'SIMD (AVX-512)'
     elif 'ThreadPoolFull' in method_raw:
-        method_group = 'ThreadPool Full'
-        method = f'ThreadPool Full (T={threads})' if threads is not None else 'ThreadPool Full'
+        method_group = 'ThreadPool Rows'
+        method = f'ThreadPool Rows (T={threads})' if threads is not None else 'ThreadPool Rows'
     elif 'ThreadPool' in method_raw:
         method_group = 'ThreadPool'
         method = f'ThreadPool (T={threads})' if threads is not None else 'ThreadPool'
@@ -173,7 +173,7 @@ df['Threads Label'] = df['Threads'].apply(lambda x: str(int(x)) if pd.notna(x) e
 df['Threads Label'] = pd.Categorical(df['Threads Label'], categories=THREAD_LABELS, ordered=True)
 
 # 2. Фильтрация по числу потоков для общего графика
-threadpool_groups = ['ThreadPool', 'ThreadPool Full']
+threadpool_groups = ['ThreadPool', 'ThreadPool Rows']
 df_main = df.copy()
 for group in threadpool_groups:
     group_mask = df_main['Method Group'] == group
@@ -241,14 +241,14 @@ for k_size in kernel_sizes:
     
     tpf_subset = df[
         (df['Kernel Size'] == k_size)
-        & (df['Method Group'] == 'ThreadPool Full')
+        & (df['Method Group'] == 'ThreadPool Rows')
         & (df['Threads'].isin(THREAD_COUNTS))
     ]
     if not tpf_subset.empty:
         save_plot(
             tpf_subset,
             TPF_TITLE_TEMPLATE.format(k=k_size),
-            f'benchmark_image_kernel_{k_size}_threadpool_full.png',
+            f'benchmark_image_kernel_{k_size}_threadpool_rows.png',
             hue='Threads Label',
             legend_title='Потоки',
             hue_order=THREAD_LABELS

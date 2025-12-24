@@ -59,7 +59,7 @@ public:
     std::vector<unsigned char> process_thread_pool(const unsigned char* img_in, int w, int h, size_t num_threads = 0);
 
     /**
-     * @brief Выполняет свертку RGB изображения, максимально загружая все потоки.
+     * @brief Выполняет свертку RGB изображения, создавая задачу на каждую строку.
      * Картинка передается по указателю, результат возвращается вектором (RAII).
      * 
      * @param img_in Указатель на исходные данные.

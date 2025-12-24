@@ -130,7 +130,7 @@ BENCHMARK_DEFINE_F(BlurFixture, BM_ProcessThreadPool)(benchmark::State& state) {
     state.SetBytesProcessed(total_iters * int64_t(w) * int64_t(h) * 4);
 }
 
-// 4. Бенчмарк для ThreadPool (максимальная загрузка потоков)
+// 4. Бенчмарк для ThreadPool (задача на каждую строку)
 BENCHMARK_DEFINE_F(BlurFixture, BM_ProcessThreadPoolFull)(benchmark::State& state) {
     size_t threads = static_cast<size_t>(state.range(2));
     const int64_t batch = kMinBenchmarkIterations;

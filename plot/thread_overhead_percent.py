@@ -227,11 +227,18 @@ def main():
                 .sort_values(["Image Size", "Threads"])
             )
             image_sizes = sorted(subset["Image Size"].unique())
+            label_order = [str(size) for size in image_sizes]
+            subset = subset.copy()
+            subset["Image Size Label"] = pd.Categorical(
+                subset["Image Size"].astype(str),
+                categories=label_order,
+                ordered=True,
+            )
 
             plt.figure(figsize=(10, 6))
             ax = sns.lineplot(
                 data=subset,
-                x="Image Size",
+                x="Image Size Label",
                 y="Overhead (%)",
                 hue="Threads Label",
                 hue_order=[str(t) for t in THREAD_COUNTS],
@@ -242,7 +249,6 @@ def main():
             )
             ax.set_xlabel("Image size (NxN)")
             ax.set_ylabel("Thread creation overhead (%)")
-            ax.set_xticks(image_sizes)
             ax.legend(title="Threads")
             plt.tight_layout()
 

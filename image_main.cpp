@@ -7,6 +7,8 @@
 #include <thread>
 #include <vector>
 
+#include "thread_pool.h"
+
 #include "image_convolver.h" // Твой заголовочный файл
 
 namespace {
@@ -148,6 +150,20 @@ BENCHMARK_DEFINE_F(BlurFixture, BM_ProcessThreadPoolFull)(benchmark::State& stat
 // ArgPair(ImageSize, KernelSize)
 
 // Генерируем список аргументов
+// 5. Thread pool creation/teardown overhead (thread creation cost)
+static void BM_ThreadPoolOverhead(benchmark::State& state) {
+    size_t threads = static_cast<size_t>(state.range(0));
+    const int64_t batch = kMinBenchmarkIterations;
+    while (state.KeepRunningBatch(batch)) {
+        for (int64_t i = 0; i < batch; ++i) {
+            ThreadPool pool(threads);
+            benchmark::DoNotOptimize(pool.get_thread_count());
+        }
+    }
+    const int64_t total_iters = static_cast<int64_t>(state.iterations());
+    state.SetItemsProcessed(total_iters);
+}
+
 static std::vector<int> BuildThreadCounts() {
     unsigned int hw = std::thread::hardware_concurrency();
     if (hw == 0) {
@@ -201,6 +217,13 @@ static void CustomArgumentsThreadPool(benchmark::internal::Benchmark* b) {
     }
 }
 
+static void CustomArgumentsThreadOverhead(benchmark::internal::Benchmark* b) {
+    std::vector<int> threadCounts = BuildThreadCounts();
+    for (int threads : threadCounts) {
+        b->Arg(threads);
+    }
+}
+
 BENCHMARK_REGISTER_F(BlurFixture, BM_ProcessDefault)
     ->Apply(CustomArguments)
     ->UseRealTime()
@@ -221,6 +244,12 @@ BENCHMARK_REGISTER_F(BlurFixture, BM_ProcessThreadPool)
 
 BENCHMARK_REGISTER_F(BlurFixture, BM_ProcessThreadPoolFull)
     ->Apply(CustomArgumentsThreadPool)
+    ->UseRealTime()
+    ->Unit(benchmark::kMicrosecond)
+    ->MinTime(kMinBenchmarkSeconds);
+
+BENCHMARK(BM_ThreadPoolOverhead)
+    ->Apply(CustomArgumentsThreadOverhead)
     ->UseRealTime()
     ->Unit(benchmark::kMicrosecond)
     ->MinTime(kMinBenchmarkSeconds);

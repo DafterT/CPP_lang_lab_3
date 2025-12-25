@@ -12,8 +12,8 @@
 #include "image_convolver.h" // Твой заголовочный файл
 
 namespace {
-constexpr int64_t kMinBenchmarkIterations = 10;
-constexpr double kMinBenchmarkSeconds = 3.0;
+constexpr int64_t kMinBenchmarkIterations = 1;
+constexpr double kMinBenchmarkSeconds = 1.0;
 }  // namespace
 
 // Вспомогательная функция для генерации ядра Гаусса

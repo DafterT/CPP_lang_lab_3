@@ -223,7 +223,7 @@ std::vector<unsigned char> ImageConvolver::process_thread_pool(const unsigned ch
                 break;
             }
 
-            futures.emplace_back(pool.dispatch_task([=, &img_out, this]() {
+            futures.emplace_back(pool.dispatch_task([=, &img_out]() {
                 for (int y = yStart; y < yStop; ++y) {
                     for (int x = xBegin; x < xEnd; ++x) {
                         float sumR = 0.f, sumG = 0.f, sumB = 0.f;
@@ -321,7 +321,7 @@ std::vector<unsigned char> ImageConvolver::process_thread_pool_full(const unsign
     }
 
     for (int y = 0; y < h; ++y) {
-        futures.emplace_back(pool.dispatch_task([=, &img_out, this]() {
+        futures.emplace_back(pool.dispatch_task([=, &img_out]() {
             const bool y_border = (y < kHalfH) || (y >= h - kHalfH);
             if (y_border || xBegin >= xEnd) {
                 for (int x = 0; x < w; ++x) {
